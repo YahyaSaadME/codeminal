@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generated Content</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container result-container">
+        <h1>Generated Content</h1>
+        <div class="input-summary">
+            <p><strong>Profession:</strong> {{ profession }}</p>
+            <p><strong>Prompt:</strong> {{ prompt }}</p>
+        </div>
+
+        <div class="result-section">
+            <div class="content-section">
+                <h2>Titles</h2>
+                <ol class="titles-list">
+                    {% for title in titles %}
+                        <li>{{ title }}</li>
+                    {% else %}
+                        <li>No titles generated</li>
+                    {% endfor %}
+                </ol>
+            </div>
+
+            <div class="content-section">
+                <h2>Description</h2>
+                <div class="description">
+                    {% if description %}
+                        <p>{{ description }}</p>
+                    {% else %}
+                        <p>No description generated</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="content-section">
+                <h2>Hashtags</h2>
+                <div class="hashtags">
+                    {% for hashtag in hashtags %}
+                        <span class="hashtag">{{ hashtag }}</span>
+                    {% else %}
+                        <p>No hashtags generated</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="content-section">
+                <h2>Generated Image</h2>
+                <div class="image-container">
+                    {% if image_path %}
+                        <img src="{{ url_for('static', filename=image_path) }}" alt="Generated image">
+                    {% else %}
+                        <p>No image generated</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="actions">
+            <a href="{{ url_for('index') }}" class="btn">Generate New Content</a>
+        </div>
+    </div>
+</body>
+</html>

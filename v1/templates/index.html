@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Content Generator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>AI Content Generator</h1>
+        <p>Generate titles, descriptions, hashtags, and an image based on a profession and prompt.</p>
+        
+        <form action="{{ url_for('index') }}" method="POST">
+            <div class="form-group">
+                <label for="profession">Profession:</label>
+                <input type="text" id="profession" name="profession" required placeholder="e.g. Photographer, Chef, Teacher" value="{{ results.profession if results else '' }}">
+            </div>
+            
+            <div class="form-group">
+                <label for="prompt">Prompt:</label>
+                <textarea id="prompt" name="prompt" required placeholder="Enter your creative prompt here...">{{ results.prompt if results else '' }}</textarea>
+            </div>
+            
+            <div class="form-group">
+                <button type="submit" class="btn">Generate Content</button>
+            </div>
+        </form>
+
+        {% if results %}
+        <div class="results-divider"></div>
+        <div class="result-section">
+            <h2>Generated Content</h2>
+
+            <div class="content-section">
+                <h3>Titles</h3>
+                <ol class="titles-list">
+                    {% for title in results.titles %}
+                        <li>{{ title }}</li>
+                    {% else %}
+                        <li>No titles generated</li>
+                    {% endfor %}
+                </ol>
+            </div>
+
+            <div class="content-section">
+                <h3>Description</h3>
+                <div class="description">
+                    {% if results.description %}
+                        <p>{{ results.description }}</p>
+                    {% else %}
+                        <p>No description generated</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="content-section">
+                <h3>Hashtags</h3>
+                <div class="hashtags">
+                    {% for hashtag in results.hashtags %}
+                        <span class="hashtag">{{ hashtag }}</span>
+                    {% else %}
+                        <p>No hashtags generated</p>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="content-section">
+                <h3>Generated Image</h3>
+                <div class="image-container">
+                    {% if results.image_data_url %}
+                        <img src="{{ results.image_data_url }}" alt="Generated image">
+                    {% else %}
+                        <p>No image generated</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
