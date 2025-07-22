@@ -1,9 +1,8 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
 import { GoogleGenAI } from '@google/genai'
 import { jsPDF } from 'jspdf'
-// import html2canvas from 'html2canvas' // Removed as it is unused
-import { Download, AlertTriangle } from 'lucide-react'
+import { Download, AlertTriangle, Share2, Twitter, Facebook, Instagram } from 'lucide-react'
 import { Alert } from "flowbite-react"
 
 interface ExcelData {
@@ -16,6 +15,7 @@ interface ExcelData {
   email_id?: string;
   prompt?: string;
   platform_type?: string;
+  logo_of_brand?: string; // New field for logo URL
 }
 
 interface GeneratedContent {
@@ -23,6 +23,7 @@ interface GeneratedContent {
   description: string;
   hashtags: string[];
   imageUrl: string;
+  logoUrl?: string; // Store the processed logo URL
 }
 
 export default function ExcelExtractorGenerator() {
@@ -34,6 +35,52 @@ export default function ExcelExtractorGenerator() {
   const [generatedContents, setGeneratedContents] = useState<(GeneratedContent | null)[]>([])
   const [error, setError] = useState<string>('')
   const contentRef = React.useRef<HTMLDivElement>(null)
+  const [shareStatus, setShareStatus] = useState<{[key: string]: boolean}>({})
+  
+  // Refs for each generated content item for better scrolling
+  const contentItemRefs = React.useRef<Array<HTMLDivElement | null>>([])
+
+  // New state for tracking logo loading status
+  const [logoLoadingStatus, setLogoLoadingStatus] = useState<{[key: string]: 'loading' | 'success' | 'error'}>({});
+
+  // Handle scroll to view generated content
+  useEffect(() => {
+    if (generatedContents.length > 0 && !generatingContent && contentRef.current) {
+      // Scroll to the generated content area with smooth behavior
+      window.scrollTo({
+        top: contentRef.current.offsetTop - 100, // Offset by 100px for better visibility
+        behavior: 'smooth'
+      })
+    }
+  }, [generatedContents, generatingContent])
+
+  // Function to fetch and convert image to base64
+  const fetchImageAsBase64 = async (url: string): Promise<string | null> => {
+    if (!url) return null;
+    
+    try {
+      // Check if the URL is already a data URL
+      if (url.startsWith('data:')) {
+        return url;
+      }
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error("Failed to convert image to base64"));
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error("Error fetching image:", error);
+      return null;
+    }
+  };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -90,6 +137,32 @@ export default function ExcelExtractorGenerator() {
       const platformType = row.platform_type || 'General social media'
       const postType = row.type_of_post || 'Standard post'
       const fontStyle = row.font_style || 'Professional'
+      const phoneNumber = row.phone_number || ''
+      const emailId = row.email_id || ''
+      const hasContactInfo = phoneNumber || emailId
+    
+      // Process logo if available
+      let logoBase64 = null;
+      let logoInstructions = '';
+      
+      if (row.logo_of_brand) {
+        setLogoLoadingStatus(prev => ({ ...prev, [index]: 'loading' }));
+        logoBase64 = await fetchImageAsBase64(row.logo_of_brand);
+        setLogoLoadingStatus(prev => ({ ...prev, [index]: logoBase64 ? 'success' : 'error' }));
+        
+        if (logoBase64) {
+          logoInstructions = `
+          BRAND LOGO REQUIREMENTS (EXTREMELY IMPORTANT):
+          1. I have provided the brand's logo that MUST be incorporated in the generated image.
+          2. Place the logo strategically where it enhances brand recognition without dominating the image.
+          3. The logo should appear EXACTLY ONCE in the image - DO NOT repeat it multiple times.
+          4. For ${platformType}, position the logo in ${platformType.toLowerCase().includes('instagram') ? 'one of the corners' : platformType.toLowerCase().includes('facebook') ? 'the bottom right corner' : 'an appropriate corner'}.
+          5. Size the logo appropriately (10-15% of the image size) - it should be clearly visible but not overwhelm the design.
+          6. Ensure the logo has good contrast against its background for optimal visibility.
+          7. Maintain the logo's original proportions and colors - do not distort or recolor it.
+          `;
+        }
+      }
       
       // Define image style based on platform type
       const imageStyleMap: {[key: string]: string} = {
@@ -107,6 +180,40 @@ export default function ExcelExtractorGenerator() {
       const imageStyle = Object.keys(imageStyleMap).find(key => platformLower.includes(key)) 
         ? imageStyleMap[Object.keys(imageStyleMap).find(key => platformLower.includes(key)) as string]
         : 'balanced composition with appropriate text overlay'
+      
+      // Define post type specific requirements
+      const postTypeStyleMap: {[key: string]: string} = {
+        'product': 'clear product showcase with prominent product placement, professional lighting, and features/benefits highlighted',
+        'promotional': 'eye-catching offer visualization with clear call-to-action and benefit statement',
+        'educational': 'informative visual with clear data presentation or step-by-step visualization',
+        'testimonial': 'trust-building elements like testimonial text highlights, customer imagery or rating symbols',
+        'announcement': 'attention-grabbing design with bold headline and clear announcement details',
+        'engagement': 'conversation-starting visual with question elements or interactive-looking components',
+        'behind-the-scenes': 'authentic, slightly less polished aesthetic with candid elements and personal touches',
+        'event': 'date/time/location information prominently displayed with event highlights visualization',
+      }
+      
+      // Get post type specific requirements
+      const postTypeLower = postType.toLowerCase()
+      const postTypeRequirements = Object.keys(postTypeStyleMap).find(key => postTypeLower.includes(key))
+        ? postTypeStyleMap[Object.keys(postTypeStyleMap).find(key => postTypeLower.includes(key)) as string]
+        : 'balanced visual composition with clear subject focus and brand-aligned aesthetics'
+    
+      // Define contact info display instructions
+      let contactInstructions = ''
+      if (hasContactInfo) {
+        contactInstructions = `
+        CONTACT INFORMATION DISPLAY (ESSENTIAL):
+        1. The following contact information MUST be included in the image in a professional, easily readable format:
+           ${phoneNumber ? `- Phone: ${phoneNumber}` : ''}
+           ${emailId ? `- Email: ${emailId}` : ''}
+        2. Position the contact information in a strategic location where it's clearly visible but doesn't distract from the main content.
+        3. For ${platformType}, place contact info ${platformType.toLowerCase().includes('instagram') ? 'at the bottom of the image' : platformType.toLowerCase().includes('linkedin') ? 'in a professional footer area' : 'in an appropriate location based on design best practices'}.
+        4. Style the contact information in a way that matches the overall design aesthetic and ${fontStyle.toLowerCase()} font style.
+        5. Ensure contact text has excellent contrast against its background for maximum readability.
+        6. Add subtle visual elements (icons) next to the contact information to improve visual appeal.
+        `
+      }
       
       // Define font style characteristics
       const fontStyleMap: {[key: string]: string} = {
@@ -127,27 +234,39 @@ export default function ExcelExtractorGenerator() {
         : fontStyleMap['professional']
       
       const formattedPrompt = `
-        You are a professional content creator for ${profession}.
+        You are a professional content creator specializing in creating high-quality ${platformType} content for ${profession}.
         
-        IMPORTANT REQUIREMENTS:
-        1. Create ${platformType} content about: ${promptText}
-        2. The content MUST be relevant to the brand "${profession}" 
-        3. Use font style that matches: ${fontStyle}
+        CONTENT BRIEF:
+        - Brand name: "${profession}"
+        - Post type: ${postType}
+        - Platform: ${platformType}
+        - Content focus: ${promptText}
+        - Font style: ${fontStyle}
+        ${hasContactInfo ? `- Contact details: ${phoneNumber ? 'Phone ' + phoneNumber : ''} ${emailId ? 'Email ' + emailId : ''}` : ''}
         
-        IMAGE GENERATION REQUIREMENTS (EXTREMELY IMPORTANT):
-        1. Generate a HIGH-QUALITY ${imageStyle} image that PERFECTLY represents the content
-        2. The image MUST include these elements:
+        IMAGE CREATION REQUIREMENTS (EXTREMELY IMPORTANT):
+        1. Generate a HIGH-QUALITY ${postType.toUpperCase()} IMAGE for ${platformType.toUpperCase()} that perfectly represents ${profession} and ${promptText}.
+        2. Image style must be: ${imageStyle}
+        3. Post type specific requirements: ${postTypeRequirements}
+        4. Design elements must include:
+           - Professional-quality composition with proper balance and visual hierarchy
            - Visual representation of the main subject: "${promptText}"
-           - Brand name "${profession}" should be visible if appropriate
-           - Color scheme and mood should match the ${postType} content type
+           - Brand name "${profession}" should be visible in a way that aligns with brand identity
+           - Color scheme that matches ${profession}'s industry standards and ${postType} mood
            - Use ${fontCharacteristics} for any text elements
-        3. Text overlay requirements:
-           - Include a SHORT, IMPACTFUL headline (5 words max)
-           - Text must be HIGHLY READABLE against the background (good contrast)
-           - Position text in the most visually effective area (rule of thirds)
-           - Text size should be appropriate for ${platformType} viewing
-        4. The image should convey the main message even without reading the description
-        5. Visual style should be cohesive with both the brand identity and content topic
+           - If this is a product post, ensure the product is the hero element with proper lighting and context
+        5. Text overlay requirements:
+           - Include a SHORT, IMPACTFUL headline (5 words max) with strong call-to-action
+           - All text must be HIGHLY READABLE with excellent contrast against backgrounds
+           - Position text following the rule of thirds for maximum visual impact
+           - Text size should be optimized for ${platformType} viewing on mobile devices
+           - Limit text to essential information only - let the visuals communicate
+        6. The image should be instantly understandable without reading the description
+        7. Visual style should maintain perfect cohesion with brand identity, platform requirements, and content topic
+        
+        ${logoInstructions}
+        
+        ${contactInstructions}
         
         Format your response EXACTLY as this JSON structure (no additional text before or after):
         {
@@ -164,14 +283,47 @@ export default function ExcelExtractorGenerator() {
         - Generate a professional ${platformType} image that FULLY incorporates all the image requirements above
       `
       
-      const response = await ai.models.generateContent({
+      // Create model request
+      const modelConfig: {
+        model: string;
+        contents: { parts: { text?: string; inlineData?: { mimeType: string; data: string } }[] }[];
+        config: {
+          responseModalities: string[];
+          responseMimeType: string;
+        };
+      } = {
         model: 'gemini-2.0-flash-preview-image-generation',
-        contents: formattedPrompt,
+        contents: [],
         config: {
           responseModalities: ["IMAGE", "TEXT"],
           responseMimeType: "text/plain",
         }
-      })
+      };
+      
+      // Add text content
+      const content: any = { text: formattedPrompt };
+      
+      // If we have a logo, add it as inline data
+      if (logoBase64) {
+        modelConfig.contents = [
+          { 
+            parts: [
+              { text: formattedPrompt },
+              {
+                inlineData: {
+                  mimeType: logoBase64.split(';')[0].split(':')[1],
+                  data: logoBase64.split(',')[1]
+                }
+              }
+            ]
+          } as { parts: { text?: string; inlineData?: { mimeType: string; data: string } }[] }
+        ];
+      } else {
+        modelConfig.contents = [{ parts: [content] }];
+      }
+      
+      // Call the API with the proper configuration
+      const response = await ai.models.generateContent(modelConfig);
       
       if (response.text) {
         const text = response.text.trim()
@@ -243,7 +395,8 @@ export default function ExcelExtractorGenerator() {
           titles: titles.length > 0 ? titles : ["No title generated"],
           description: description || "No description generated",
           hashtags: hashtags.length > 0 ? hashtags : ["#nohashtags"],
-          imageUrl: imageUrl
+          imageUrl: imageUrl,
+          logoUrl: row.logo_of_brand // Store the original logo URL
         }
         
         return generatedContent
@@ -297,9 +450,22 @@ export default function ExcelExtractorGenerator() {
         currentPage++
       }
       
-      // Add brand name and platform type as title
+      // Add brand name, platform type and logo as title
       pdf.setFontSize(18)
       pdf.text(`${rowData.brand_name || 'Brand'} - ${rowData.platform_type || 'Social Media'}`, 14, 20)
+      
+      // Add logo if available
+      if (rowData.logo_of_brand && logoLoadingStatus[i] === 'success') {
+        try {
+          // The logo is already part of the generated image, no need to add it separately
+          // Just showing brand info with the logo next to it
+          const logoImg = rowData.logo_of_brand;
+          // Add a small logo in the corner of the PDF (if needed)
+          pdf.addImage(logoImg, 'PNG', 180, 10, 15, 15);
+        } catch (err) {
+          console.error("Error adding logo to PDF:", err)
+        }
+      }
       
       // Add content details
       pdf.setFontSize(12)
@@ -368,6 +534,151 @@ export default function ExcelExtractorGenerator() {
     pdf.save(`social-media-content-${fileName || 'generated'}.pdf`)
   }
 
+  // New: Share functionality
+  const shareContent = (content: GeneratedContent | null, platform: string, index?: number) => {
+    if (!content) return
+
+    // Create share text
+    const shareText = `
+${content.titles[0] || ''}
+
+${content.description || ''}
+
+${content.hashtags.join(' ') || ''}
+    `.trim()
+
+    // Set temporary sharing status
+    const statusKey = index !== undefined ? `${platform}-${index}` : `${platform}-all`
+    setShareStatus(prev => ({ ...prev, [statusKey]: true }))
+    setTimeout(() => {
+      setShareStatus(prev => ({ ...prev, [statusKey]: false }))
+    }, 2000)
+
+    try {
+      // Platform-specific sharing
+      if (navigator.share && platform === 'native') {
+        // Use native share if available
+        navigator.share({
+          title: content.titles[0] || 'Social Media Content',
+          text: shareText,
+          // Could include the image URL but it would need to be a public URL, not base64
+        })
+        .catch(err => console.error('Error sharing:', err))
+        return
+      }
+
+      // Platform-specific share URLs
+      let shareUrl = ''
+      switch (platform) {
+        case 'twitter':
+          shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`
+          break
+        case 'facebook':
+          shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}&quote=${encodeURIComponent(shareText)}`
+          break
+        case 'instagram':
+          // Instagram doesn't support direct web sharing links for content
+          // Usually requires mobile app, so just copy to clipboard
+          navigator.clipboard.writeText(shareText)
+          return
+        default:
+          navigator.clipboard.writeText(shareText)
+          return
+      }
+
+      // Open share URL in new window
+      if (shareUrl) {
+        window.open(shareUrl, '_blank', 'width=600,height=400')
+      }
+    } catch (error) {
+      console.error('Error sharing content:', error)
+      // Fallback to clipboard copy
+      navigator.clipboard.writeText(shareText)
+        .then(() => alert('Content copied to clipboard!'))
+        .catch(err => console.error('Failed to copy:', err))
+    }
+  }
+
+  // Share all generated content
+  const shareAllContent = (platform: string) => {
+    if (generatedContents.length === 0) return
+
+    // Get the first valid content to share
+    const validContent = generatedContents.find(content => content !== null)
+    if (!validContent) return
+
+    // Share the combined text of all content
+    const combinedText = generatedContents
+      .filter(content => content !== null)
+      .map(content => `
+${content?.titles[0] || ''}
+
+${content?.description || ''}
+
+${content?.hashtags.join(' ') || ''}
+      `.trim())
+      .join('\n\n---\n\n')
+
+    // Set temporary sharing status
+    const statusKey = `${platform}-all`
+    setShareStatus(prev => ({ ...prev, [statusKey]: true }))
+    setTimeout(() => {
+      setShareStatus(prev => ({ ...prev, [statusKey]: false }))
+    }, 2000)
+
+    try {
+      // Handle sharing based on platform
+      if (navigator.share && platform === 'native') {
+        navigator.share({
+          title: 'Social Media Content',
+          text: combinedText,
+        }).catch(err => console.error('Error sharing:', err))
+        return
+      }
+
+      let shareUrl = ''
+      switch (platform) {
+        case 'twitter':
+          // Twitter has character limits, so just share the first content
+          shareUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(
+            `${validContent.titles[0] || ''}\n\n${validContent.description || ''}\n\n${validContent.hashtags.join(' ') || ''}`
+          )}`
+          break
+        case 'facebook':
+          shareUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(window.location.href)}&quote=${encodeURIComponent(combinedText.substring(0, 1000))}`
+          break
+        case 'instagram':
+          navigator.clipboard.writeText(combinedText)
+          return
+        default:
+          navigator.clipboard.writeText(combinedText)
+          return
+      }
+
+      if (shareUrl) {
+        window.open(shareUrl, '_blank', 'width=600,height=400')
+      }
+    } catch (error) {
+      console.error('Error sharing all content:', error)
+      navigator.clipboard.writeText(combinedText)
+        .then(() => alert('All content copied to clipboard!'))
+        .catch(err => console.error('Failed to copy:', err))
+    }
+  }
+
+  // Scroll to specific content item
+  const scrollToContentItem = (index: number) => {
+    if (contentItemRefs.current[index]) {
+      const el = contentItemRefs.current[index]
+      if (el) {
+        window.scrollTo({
+          top: el.offsetTop - 100, // Offset by 100px for better visibility
+          behavior: 'smooth'
+        })
+      }
+    }
+  }
+
   const renderTable = () => {
     if (excelData.length === 0) return null
 
@@ -410,32 +721,156 @@ export default function ExcelExtractorGenerator() {
   const renderGeneratedContent = () => {
     if (generatedContents.length === 0) return null
     
+    // Update refs array length to match content length
+    if (contentItemRefs.current.length !== generatedContents.length) {
+      contentItemRefs.current = Array(generatedContents.length).fill(null)
+    }
+    
     return (
-      <div ref={contentRef} className="relative mt-12 mb-8">
-        <div className="flex justify-between items-center mb-6">
+      <div ref={contentRef} className="relative mt-12 mb-8 w-full overflow-visible">
+        <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
           <h2 className="text-2xl font-semibold text-gray-800 dark:text-white">Generated Social Media Content</h2>
-          <button 
-            onClick={handleDownloadPDF}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
-          >
-            <Download size={18} />
-            Download All as PDF
-          </button>
+          
+          <div className="flex gap-2 flex-wrap justify-end">
+            {/* Global share buttons */}
+            <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded-md">
+              <span className="text-sm text-gray-600 dark:text-gray-300">Share All:</span>
+              <button 
+                onClick={() => shareAllContent('twitter')}
+                className="p-2 text-blue-400 hover:text-blue-600 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                title="Share on Twitter"
+              >
+                <Twitter size={18} />
+              </button>
+              <button 
+                onClick={() => shareAllContent('facebook')}
+                className="p-2 text-blue-600 hover:text-blue-800 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                title="Share on Facebook"
+              >
+                <Facebook size={18} />
+              </button>
+              <button 
+                onClick={() => shareAllContent('instagram')}
+                className="p-2 text-pink-500 hover:text-pink-700 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                title="Copy for Instagram"
+              >
+                <Instagram size={18} />
+              </button>
+              <button 
+                onClick={() => shareAllContent('native')}
+                className="p-2 text-gray-600 hover:text-gray-800 dark:text-gray-300 dark:hover:text-gray-100 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                title="Share"
+              >
+                <Share2 size={18} />
+              </button>
+            </div>
+            
+            <button 
+              onClick={handleDownloadPDF}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900"
+            >
+              <Download size={18} />
+              Download All as PDF
+            </button>
+          </div>
         </div>
+        
+        {/* Generated content navigation */}
+        {generatedContents.length > 1 && (
+          <div className="mb-6 overflow-x-auto">
+            <div className="flex gap-2 pb-2">
+              {generatedContents.map((content, index) => 
+                content ? (
+                  <button
+                    key={index}
+                    onClick={() => scrollToContentItem(index)}
+                    className="px-3 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-sm transition-colors whitespace-nowrap"
+                  >
+                    {excelData[index]?.brand_name || `Item ${index + 1}`}
+                  </button>
+                ) : null
+              )}
+            </div>
+          </div>
+        )}
         
         <div className="space-y-12">
           {generatedContents.map((content, index) => {
             if (!content) return null
             const rowData = excelData[index]
+            const hasLogo = !!rowData.logo_of_brand
             
             return (
-              <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-6 bg-white dark:bg-gray-800 shadow-sm transition-colors">
-                <div className="flex justify-between mb-4">
-                  <div>
-                    <h3 className="text-xl font-semibold text-gray-800 dark:text-white">{rowData.brand_name || `Item ${index + 1}`}</h3>
-                    <p className="text-gray-500 dark:text-gray-400">
-                      {rowData.platform_type || 'Social Media'} • {rowData.type_of_post || 'Post'}
-                    </p>
+              <div 
+                key={index} 
+                ref={(el) => {
+                  if (contentItemRefs.current) {
+                    contentItemRefs.current[index] = el;
+                  }
+                }}
+                className="border border-gray-200 dark:border-gray-700 rounded-lg p-6 bg-white dark:bg-gray-800 shadow-sm transition-colors"
+                id={`content-item-${index}`}
+              >
+                <div className="flex justify-between mb-4 flex-wrap gap-2">
+                  <div className="flex items-center gap-3">
+                    {hasLogo && (
+                      <div className="w-10 h-10 flex-shrink-0 overflow-hidden rounded border border-gray-200 dark:border-gray-700 bg-white">
+                        {logoLoadingStatus[index] === 'loading' ? (
+                          <div className="w-full h-full flex items-center justify-center bg-gray-50 dark:bg-gray-700">
+                            <div className="w-5 h-5 border-2 border-gray-200 border-t-blue-600 rounded-full animate-spin"></div>
+                          </div>
+                        ) : logoLoadingStatus[index] === 'error' ? (
+                          <div className="w-full h-full flex items-center justify-center bg-gray-50 dark:bg-gray-700">
+                            <span className="text-red-500 text-xs">Error</span>
+                          </div>
+                        ) : (
+                          <img 
+                            src={rowData.logo_of_brand} 
+                            alt={`${rowData.brand_name || 'Brand'} logo`}
+                            className="w-full h-full object-contain"
+                            onError={() => setLogoLoadingStatus(prev => ({ ...prev, [index]: 'error' }))}
+                          />
+                        )}
+                      </div>
+                    )}
+                    <div>
+                      <h3 className="text-xl font-semibold text-gray-800 dark:text-white">{rowData.brand_name || `Item ${index + 1}`}</h3>
+                      <p className="text-gray-500 dark:text-gray-400">
+                        {rowData.platform_type || 'Social Media'} • {rowData.type_of_post || 'Post'}
+                      </p>
+                    </div>
+                  </div>
+                  
+                  {/* Individual share buttons */}
+                  <div className="flex items-center gap-1">
+                    <button 
+                      onClick={() => shareContent(content, 'twitter', index)}
+                      className={`p-1.5 text-blue-400 hover:text-blue-600 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${shareStatus[`twitter-${index}`] ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                      title="Share on Twitter"
+                    >
+                      <Twitter size={16} />
+                    </button>
+                    <button 
+                      onClick={() => shareContent(content, 'facebook', index)}
+                      className={`p-1.5 text-blue-600 hover:text-blue-800 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${shareStatus[`facebook-${index}`] ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                      title="Share on Facebook"
+                    >
+                      <Facebook size={16} />
+                    </button>
+                    <button 
+                      onClick={() => shareContent(content, 'instagram', index)}
+                      className={`p-1.5 text-pink-500 hover:text-pink-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${shareStatus[`instagram-${index}`] ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                      title="Copy for Instagram"
+                    >
+                      <Instagram size={16} />
+                    </button>
+                    <button 
+                      onClick={() => shareContent(content, 'native', index)}
+                      className={`p-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${shareStatus[`native-${index}`] ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                      title="Share"
+                    >
+                      <Share2 size={16} />
+                    </button>
                   </div>
                 </div>
                 
@@ -443,11 +878,14 @@ export default function ExcelExtractorGenerator() {
                   {content.imageUrl && (
                     <div className="border border-gray-200 dark:border-gray-700 rounded-md overflow-hidden bg-white dark:bg-gray-900 p-2">
                       <h4 className="text-lg font-medium mb-2 text-gray-800 dark:text-gray-100">Generated Image</h4>
-                      <img 
-                        src={content.imageUrl} 
-                        alt={`Generated for ${rowData.brand_name || `Item ${index + 1}`}`}
-                        className="w-full h-auto rounded-md"
-                      />
+                      <div className="relative">
+                        <img 
+                          src={content.imageUrl} 
+                          alt={`Generated for ${rowData.brand_name || `Item ${index + 1}`}`}
+                          className="w-full h-auto rounded-md"
+                        />
+                        {/* We don't need to manually overlay the logo since it's already included in the generated image */}
+                      </div>
                     </div>
                   )}
                   
@@ -495,7 +933,7 @@ export default function ExcelExtractorGenerator() {
   }
 
   return (
-    <div className="absolute z-[10] p-6 max-w-6xl mx-auto">
+    <div className="relative p-6 max-w-6xl mx-auto w-full">
       <h1 className="text-2xl font-bold mb-6 text-gray-900 dark:text-white">Excel Social Media Generator</h1>
       
       <div className="border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg p-6 text-center bg-white/50 dark:bg-gray-800/50">

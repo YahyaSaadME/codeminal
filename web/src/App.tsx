@@ -28,7 +28,8 @@ function Navigation() {
 export default function App() {
   return (
     <Router>
-      <main className="flex min-h-screen flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 px-4 py-24 transition-colors duration-300">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors duration-300 relative overflow-x-hidden">
+        {/* Background pattern */}
         <div className="fixed inset-0 size-full">
           <div className="relative h-full w-full select-none">
             <img
@@ -44,17 +45,22 @@ export default function App() {
           </div>
         </div>
         
+        {/* Navigation */}
         <Navigation />
         
-        <div className="absolute top-4 right-4 z-10">
+        {/* Theme toggle */}
+        <div className="fixed top-4 right-4 z-50">
           <DarkThemeToggle className="p-2 bg-white/80 dark:bg-gray-800/80 rounded-full shadow-sm hover:bg-white dark:hover:bg-gray-800 transition-colors" />
         </div>
-
-        <Routes>
-          <Route path="/excel" element={<ExcelExtractorGenerator />} />
-          <Route path="*" element={<SocialMediaGenerator />} />
-        </Routes>
-      </main>
+        
+        {/* Main content */}
+        <main className="relative w-full min-h-screen overflow-y-auto px-4 py-24">
+          <Routes>
+            <Route path="/excel" element={<ExcelExtractorGenerator />} />
+            <Route path="*" element={<SocialMediaGenerator />} />
+          </Routes>
+        </main>
+      </div>
     </Router>
   );
 }
